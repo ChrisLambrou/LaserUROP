@@ -6,6 +6,7 @@ datafile or graph. These functions are built on top of measurements.py,
 microscope.py, image_proc.py and data_io.py."""
 
 import time as t
+import time
 import cv2
 import numpy as np
 from nplab.experiment.experiment import Experiment
@@ -95,9 +96,86 @@ class Tiled(Experiment):
         print self.scope.stage.position
 
 
+def autofocus(scope, dz):
+    """Take pictures at a range of z positions and move to the sharpest."""
+    sharpnesses = []
+    positions = []
+    for index, pos in raster_scan(scope.stage, dz=dz):
+        image = scope.camera.get_frame(greyscale=False, mode="compressed")
+        sharpnesses.append(mmts.sharpness_lap(image))
+        positions.append(pos)
+    scope.stage.move_to_pos(positions[np.argmax(sharpnesses)])
+
+
+class TiledImage(Experiment):
+    """Class to conduct experiments where a tiled sequence of images is 
+    taken and post-processed.
+    Valid kwargs are: step_pair, backlash, focus."""
+
+    def __init__(self, microscope, config_file, **kwargs):
+        super(TiledImage, self).__init__()
+        self.config_file = d.make_dict(config_file, **kwargs)
+        self.scope = microscope
+        self.scope.log('INFO: starting tiled image.')
+        self.scope.camera.preview()
+
+    def run(self, data_group=None):
+        # Get default values.
+        n = self.config_file["n"]
+        step_increment = self.config_file["steps"]
+        fine_af_dz = symmetric_range(
+                self.config_file["autofocus_fine_n"],
+                self.config_file["autofocus_fine_step"])
+        coarse_af_dz = symmetric_range(
+                self.config_file["autofocus_coarse_n"],
+                self.config_file["autofocus_coarse_step"])
+
+        # Set up the data recording.
+        attributes = {'n': n, 'step_increment': step_increment,
+                      'backlash': self.config_file["backlash"],
+                      'focus': self.config_file["focus"]}
+
+        # Make a new data group to store results
+        if data_group is None:
+            data_group = self.create_data_group("tiled_image_%d")
+
+        # Now move over the grid of positions and save images.
+        displacements = symmetric_range(n, step_increment)
+        z_shift = 0
+        for index, pos in raster_scan(self.scope.stage,
+                                      dx=displacements,
+                                      dy=displacements):
+            # We autofocus, remembering the previous z position
+            self.scope.stage.focus_rel(z_shift)
+            if index[0] == 0:
+                autofocus(self.scope, coarse_af_dz)
+            autofocus(self.scope, fine_af_dz)
+            z_shift = self.scope.stage.position[2]
+            # now save the image
+            image = self.scope.camera.get_frame(greyscale=False,
+                                                mode="fast_bayer")
+            compressed_image = cv2.imencode(".jpg", image)[1]
+            ds = data_group.create_dataset("image_%d", 
+                                           data=compressed_image)
+            ds.attrs['position'] = self.scope.stage.position
+            ds.attrs['compressed_image_format'] = 'JPEG'
+
+class TimelapseTiledImage(TiledImage):
+    """Take a TiledImage every n minutes (assumint the TiledImage takes less time)"""
+    def run(self):
+        interval_minutes = self.config_file["timelapse_interval_minutes"]
+        last_image = time.time() - interval_minutes * 60
+        while self.wait_or_stop(max(0.1, interval_minutes*60 - (time.time()-last_image))):
+            last_image = time.time()
+            print "acquiring another tiled image..."
+            TiledImage.run(self)
+            print "done"
+        print "all finished."
+
+
+
 class Align(Experiment):
     """Class to align the spot to position of maximum brightness."""
-
     def __init__(self, microscope, config_file, **kwargs):
         super(Align, self).__init__()
         self.config_file = d.make_dict(config_file, **kwargs)
@@ -226,6 +304,36 @@ def centre_spot(scope_obj):
     scope_obj.stage.move_rel(move_by)
     # scope_obj.datafile.add_data(cropped, gr, 'cropped')
     return
+
+
+def symmetric_range(n, increment):
+    """Calculate a range with n points, spaced evenly about 0.
+
+    The distance between each pair of adjacent points is `increment`.
+    """
+    return (np.arange(n) - (n-1)/2) * increment
+
+
+def raster_scan(stage, dx=[0], dy=[0], dz=[0]):
+    """Iterate over positions - returns a tuple of (index, pos) each time"""
+    initial_pos = stage.position
+    xs = np.array(dx) + initial_pos[0]
+    ys = np.array(dy) + initial_pos[1]
+    zs = np.array(dz) + initial_pos[2]
+    try:
+        for k, z in enumerate(zs):
+            for j, y in enumerate(ys):
+                for i, x in enumerate(xs):
+                    stage.move_to_pos([x, y, z])
+                    yield np.array([i, j , k]), np.array([x, y, z])
+    except KeyboardInterrupt:
+        print "Keyboard Interrupt: aborting scan."
+        raise KeyboardInterrupt
+    except Exception as e:
+        print "An error occurred.  Moving back to initial position."
+        raise e
+    finally:
+        stage.move_to_pos(initial_pos)
 
 
 def _move_capture(exp_obj, iter_dict, image_mode, func_list=None,

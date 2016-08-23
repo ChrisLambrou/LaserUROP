@@ -44,7 +44,7 @@ override:             false
 # --------------------------------------------- CamScope GUI parameters ---------------------------------------------
 
 # No. of microsteps per key press on GUI.
-key_stepsize:         1000
+key_stepsize:         250
 
 # Control keys for the GUI.
 
@@ -56,13 +56,13 @@ save_stored_image:    t
 
 stop_tracking:        z
 
-+x:                   s
++x:                   a
 
--x:                   w
+-x:                   d
 
-+y:                   d
++y:                   w
 
--y:                   a
+-y:                   s
 
 # Not sure about the exact direction of +z and -z.
 +z:                   e
@@ -103,20 +103,29 @@ decimal:                    false
 # ---------------------------------------------------- Tiled images ---------------------------------------------------
 Tiled:
 # The number of steps per axis to take i.e. generates an n+1 x n+1 images in total.
-n:                20
+n:                3
 
 # The number of steps to take between each image.
-steps:            100
+steps:            1500
+
+# Autofocus parameters for tiled images.  Coarse autofocus is performed at the
+# start, fine is done every step.
+autofocus_fine_n:       5
+autofocus_fine_step:    200
+autofocus_coarse_n:     11
+autofocus_coarse_step:  400
 
 # Whether to autofocus between each tile. For the first image a full auto-focus is performed and a quick one on
 # subsequent tiles.
-focus:            false
+focus:            true
 
 crop_fraction:    50
 
 pixel_block:      4
 
 save_mode:        save_subset
+
+timelapse_interval_minutes: 4
 # -------------------------------------------------- Laser alignment --------------------------------------------------
 
 # The number of steps per axis to take i.e. generates an n+1 x n+1 images in total.
@@ -153,5 +162,4 @@ crop_fraction:     0.3
 # The number of pixels per dimension to group. For a value of 4 the image will be down-sampled by a factor of 16 by
 # grouping pixels into 4x4 squares.
 pixel_block:       4
-
 ...

@@ -25,6 +25,7 @@ import image_proc as proc
 try:
     import picamera
     import picamera.array
+    import pifastbayerarray
 except ImportError:
     pass  # Don't fail on error; simply force cv2 camera later
 
@@ -366,6 +367,18 @@ class Camera:
         frame = cv2.imdecode(data, 1)
         return proc.make_greyscale(frame, greyscale)
 
+    def _fast_bayer_frame(self, greyscale):
+        """Capture a raw bayer image, de-mosaic it and output a BGR numpy
+        array."""
+        # Normally bayer images are not post-processed via white balance,
+        # etc in # the camera and are thus of much worse quality if this were
+        # done. But the combination of lenses in the Pi means that the
+        # reverse is true.
+        frame = pifastbayerarray.PiFastBayerArray(self._camera)
+        self._camera.capture(frame, 'jpeg', bayer=True)
+        frame = frame.demosaic()
+        return proc.make_greyscale(frame, greyscale)
+
     def _bayer_frame(self, greyscale):
         """Capture a raw bayer image, de-mosaic it and output a BGR numpy
         array."""
@@ -453,6 +466,8 @@ class Camera:
             frame = self._bgr_frame(greyscale, videoport)
         elif mode == 'bayer':
             frame = self._bayer_frame(greyscale)
+        elif mode == 'fast_bayer':
+            frame = self._fast_bayer_frame(greyscale)
         else:
             raise ValueError('The parameter \'mode\' has an invalid value: '
                              '{}.'.format(mode))
@@ -703,13 +718,13 @@ def _move_motors(bus, x, y, z):
 
     # The arguments for write_byte_data are: the I2C address of each motor,
     # the register and how much to move it by. Currently hardcoded in.
-    bus.write_byte_data(0x50, x >> 8, x & 255)
-    bus.write_byte_data(0x58, y >> 8, y & 255)
-    bus.write_byte_data(0x6a, z >> 8, z & 255)
+    bus.write_byte_data(0x08, x >> 8, x & 255)
+    bus.write_byte_data(0x10, y >> 8, y & 255)
+    bus.write_byte_data(0x18, z >> 8, z & 255)
 
     # Empirical formula for how micro step values relate to rotational speed.
     # This is only valid for the specific set of motors tested.
-    time.sleep(np.ceil(max([abs(x), abs(y), abs(z)]))/1000 + 2)
+    time.sleep(np.ceil(max([abs(x), abs(y), abs(z)]))*(1.4/1000) + 0.1)
 
 if __name__ == '__main__':
     scope = CamScope('./configs/config.yaml')
