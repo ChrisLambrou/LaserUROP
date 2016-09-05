@@ -629,7 +629,13 @@ class Stage:
 
         self.bus = smbus.SMBus(self.config_dict["channel"])
         time.sleep(2)
-        self.position = np.array([0, 0, 0])
+        self._position = np.array([0, 0, 0])
+        self.drift = np.array([0, 0, 0])
+
+    @property
+    def position(self):
+        """The current position of the stage"""
+        return self._position - self.drift
 
     def move_rel(self, vector, backlash=None, override=None):
         """Move the stage by (x,y,z) micro steps.
@@ -658,13 +664,13 @@ class Stage:
         movements.insert(0, r)
 
         for movement in movements:
-            new_pos = np.add(self.position, movement)
+            new_pos = np.add(self._position, movement)
             # If all elements of the new position vector are inside bounds (OR
             # overridden):
             if np.all(np.less_equal(
                     np.absolute(new_pos), self._XYZ_BOUND)) or override:
                 _move_motors(self.bus, *movement)
-                self.position = new_pos
+                self._position = new_pos
             else:
                 raise ValueError('New position is outside allowed range.')
 
@@ -687,7 +693,7 @@ class Stage:
 
     def _reset_pos(self):
         # Hard resets the stored position, just in case things go wrong.
-        self.position = np.array([0, 0, 0])
+        self._position = np.array([0, 0, 0])
 
 
 class BrightnessSensor:
