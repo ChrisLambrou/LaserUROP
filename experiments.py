@@ -96,7 +96,7 @@ class Tiled(Experiment):
         print self.scope.stage.position
 
 
-def autofocus(scope, dz, update_drift=False):
+def autofocus(scope, dz):
     """Take pictures at a range of z positions and move to the sharpest."""
     sharpnesses = []
     positions = []
@@ -105,15 +105,6 @@ def autofocus(scope, dz, update_drift=False):
         sharpnesses.append(mmts.sharpness_lap(image))
         positions.append(pos)
     scope.stage.move_to_pos(positions[np.argmax(sharpnesses)])
-    if update_drift:
-        # We set the stage's drift parameter so that it remembers
-        # the plane that should be z=0 (i.e. the focal plane)
-        drift = scope.stage.drift
-        drift[2] += dz[np.argmax(sharpnesses)]
-        scope.stage.drift = drift
-        # Logic for the above: if we've hit dz=0, we were in focus
-        # so nothing need change.  If the maximum sharpness had a
-        # different dz, we want to update the drift so it's centred.
 
 
 class TiledImage(Experiment):
@@ -150,43 +141,24 @@ class TiledImage(Experiment):
 
         # Now move over the grid of positions and save images.
         displacements = symmetric_range(n, step_increment)
+        z_shift = 0
         for index, pos in raster_scan(self.scope.stage,
                                       dx=displacements,
                                       dy=displacements):
             # We autofocus, remembering the previous z position
+            self.scope.stage.focus_rel(z_shift)
             if index[0] == 0:
-                autofocus(self.scope, coarse_af_dz, update_drift=True)
-                autofocus(self.scope, fine_af_dz, update_drift=True)
-
-            # We combine a fine autofocus with saving the images
-            sharpnesses = []
-            for j, focus_pos in raster_scan(self.scope.stage, dz=fine_af_dz):
-                # save the image
-                image = self.scope.camera.get_frame(greyscale=False,
-                                                    mode="compressed")
-                compressed_image = cv2.imencode(".jpg", image)[1]
-                ds = data_group.create_dataset("image_%d", 
-                                               data=compressed_image)
-                ds.attrs['position'] = self.scope.stage.position
-                ds.attrs['drift'] = self.scope.stage.drift
-                ds.attrs['compressed_image_format'] = 'JPEG'
-                # Calculate the sharpness metric
-                sharpnesses.append(mmts.sharpness_lap(image))
-                ds.attrs['sharpness'] = sharpnesses[-1]
-                del ds
-                del compressed_image
-                del image
-
-            # We set the stage's drift parameter so that it remembers
-            # the plane that should be z=0 (i.e. the focal plane)
-            drift = self.scope.stage.drift
-            drift[2] += fine_af_dz[np.argmax(sharpnesses)]/2.0
-            self.scope.stage.drift = drift
-            del sharpnesses
-            # Logic for the above: if we've hit dz=0, we were in focus
-            # so nothing need change.  If the maximum sharpness had a
-            # different dz, we want to update the drift so it's centred.
-
+                autofocus(self.scope, coarse_af_dz)
+            autofocus(self.scope, fine_af_dz)
+            z_shift = self.scope.stage.position[2]
+            # now save the image
+            image = self.scope.camera.get_frame(greyscale=False,
+                                                mode="fast_bayer")
+            compressed_image = cv2.imencode(".jpg", image)[1]
+            ds = data_group.create_dataset("image_%d", 
+                                           data=compressed_image)
+            ds.attrs['position'] = self.scope.stage.position
+            ds.attrs['compressed_image_format'] = 'JPEG'
 
 class TimelapseTiledImage(TiledImage):
     """Take a TiledImage every n minutes (assumint the TiledImage takes less time)"""
