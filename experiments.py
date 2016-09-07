@@ -96,49 +96,45 @@ class Tiled(Experiment):
         print self.scope.stage.position
 
 
-def autofocus(scope, dz, log = False, data_group = None):
+def autofocus(scope, dz, data_group = None):
     """Take pictures at a range of z positions and move to the sharpest."""
     print "Autofocusing"
     sharpnesses = []
     positions = []
+
     for index, pos in raster_scan(scope.stage, dz=dz):
-        image = scope.camera.get_frame(greyscale=False, mode="compressed")
+        image = _capture_image_from_microscope(scope)
         if data_group is not None:
             _save_image_to_datagroup(data_group, image, pos)
-
-        sharpness = mmts.sharpness_lap(image)
+        sharpness = mmts.sharpness_clippedlog(image)
         sharpnesses.append(sharpness)
-        if log:
-            print "    %d, %f" % (pos[2], sharpness)
         positions.append(pos)
 
     best_index = np.argmax(sharpnesses)
-    if log:
-        print "    Best index: %d" % (best_index)
-
     best_position = positions[best_index]
 
     # Use quadratic curve fitting to determine the best z-value, based on the best sample
     # and its two adjacent neighbours.
     if 0 < best_index < len(sharpnesses) - 1:
-        z1 = positions[best_index - 1][2]
-        z2 = positions[best_index][2]
-        z3 = positions[best_index + 1][2]
-        s1 = sharpnesses[best_index - 1]
-        s2 = sharpnesses[best_index]
-        s3 = sharpnesses[best_index + 1]
-        zbest, sbest = calculate_parabola_vertex(z1, s1, z2, s2, z3, s3)
-        best_position = [best_position[0], best_position[1], int(round(zbest))]
-    else:
-        if log:
-            print "    Parabolic interpolation not used"
+        best_position = _quadratic_curve_fit_on_z_values(positions, sharpnesses, best_index)
 
-    if log:
-        print "    Best position: %d" % (best_position[2])
+    # And finally move the stage to the best focus position.
     scope.stage.move_to_pos(best_position)
 
 
-def calculate_parabola_vertex(x1, y1, x2, y2, x3, y3):
+def _quadratic_curve_fit_on_z_values(positions, sharpnesses, best_index):
+    best_position = positions[best_index]
+    z1 = positions[best_index - 1][2]
+    z2 = positions[best_index][2]
+    z3 = positions[best_index + 1][2]
+    s1 = sharpnesses[best_index - 1]
+    s2 = sharpnesses[best_index]
+    s3 = sharpnesses[best_index + 1]
+    zbest, sbest = _calculate_parabola_vertex(z1, s1, z2, s2, z3, s3)
+    return [best_position[0], best_position[1], int(round(zbest))]
+
+
+def _calculate_parabola_vertex(x1, y1, x2, y2, x3, y3):
     denom = (x1 - x2) * (x1 - x3) * (x2 - x3)
     A = (x3 * (y2 - y1) + x2 * (y1 - y3) + x1 * (y3 - y2)) / denom
     B = (x3 * x3 * (y1 - y2) + x2 * x2 * (y3 - y1) + x1 * x1 * (y2 - y3)) / denom
@@ -193,8 +189,8 @@ class TiledImage(Experiment):
             autofocus(self.scope, fine_af_dz, log=True, data_group=data_group)
             z_shift = self.scope.stage.position[2]
             # now capture and save the image at the best z-axis position of focus.
-            image = self.scope.camera.get_frame(greyscale=False,
-                                                mode="fast_bayer")
+            image = _capture_image_from_microscope(self.scope)
+
             _save_image_to_datagroup(data_group, image, self.scope.stage.position)
 
 class TimelapseTiledImage(TiledImage):
@@ -239,7 +235,7 @@ class Align(Experiment):
         for i in range(self.config_file["parabola_iterations"]):
             for ax in ['x', 'y']:
                 par.run(func_list=func_list, save_mode=save_mode, axis=ax)
-        image = self.scope.camera.get_frame(greyscale=False)
+        image = _capture_image_from_microscope(self.scope, mode="fast_bayer")
         mod = proc.crop_array(image, mmts='pixel', dims=55)
         self.create_dataset('FINAL', data=mod)
 
@@ -484,7 +480,7 @@ def _move_capture(exp_obj, iter_dict, image_mode, func_list=None,
                 print next_pos
                 exp_obj.scope.stage.move_to_pos(next_pos)
 
-                image = exp_obj.scope.camera.get_frame(greyscale=False,
+                image = _capture_image_from_microscope(exp_obj.scope,
                                                        mode=image_mode)
                 modified = image
 
@@ -546,3 +542,7 @@ def _save_image_to_datagroup(data_group, image, position):
                                    data=compressed_image)
     ds.attrs['position'] = position
     ds.attrs['compressed_image_format'] = 'JPEG'
+
+
+def _capture_image_from_microscope(scope, greyscale=False, mode="compressed"):
+    return scope.camera.get_frame(greyscale, mode)
