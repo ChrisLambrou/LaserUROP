@@ -205,6 +205,10 @@ class CompensationImage(Experiment):
     def run(self, data_group=None):
         print "Compensation Image currently does nothing"
 
+        compensation_image_path = self.config_file["compensation_image_path"]
+
+        print "Compensation image path = '%s'" % (compensation_image_path)
+
 
 class TimelapseTiledImage(TiledImage):
     """Take a TiledImage every n minutes (assumint the TiledImage takes less time)"""

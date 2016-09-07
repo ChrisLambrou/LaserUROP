@@ -162,4 +162,12 @@ crop_fraction:     0.3
 # The number of pixels per dimension to group. For a value of 4 the image will be down-sampled by a factor of 16 by
 # grouping pixels into 4x4 squares.
 pixel_block:       4
+
+# ----------------------------------------------------- CompensationImage -----------------------------------------------------
+
+# The path of the compensation image. This is relative to the current working folder, not _this_ config file.
+# This file will be overwritten by the CompensationImage experiment, and used by other experiments if/when they
+# become aware of this capability.
+compensation_image_path:    CompensationImage.jpg
+
 ...
