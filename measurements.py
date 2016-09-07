@@ -16,8 +16,9 @@ def sharpness_lap(bgr_array):
     :return: The mean Laplacian.
     """
     image_bw = np.mean(bgr_array, 2)
-    image_lap = sn.filters.laplace(image_bw)
-    return np.mean(np.abs(image_lap))
+    image_filtered = sn.filters.gaussian_laplace(image_bw, 1)
+#    return np.mean(np.clip(image_filtered, 0, 10000000))
+    return -np.mean(np.clip(image_filtered, -10000000, 0))
 
 
 def brightness(arr):
