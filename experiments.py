@@ -185,8 +185,8 @@ class TiledImage(Experiment):
             # We autofocus, remembering the previous z position
             self.scope.stage.focus_rel(z_shift)
             if index[0] == 0:
-                autofocus(self.scope, coarse_af_dz, log=True)
-            autofocus(self.scope, fine_af_dz, log=True, data_group=data_group)
+                autofocus(self.scope, coarse_af_dz)
+            autofocus(self.scope, fine_af_dz, data_group=data_group)
             z_shift = self.scope.stage.position[2]
             # now capture and save the image at the best z-axis position of focus.
             image = _capture_image_from_microscope(self.scope)
@@ -203,11 +203,26 @@ class CompensationImage(Experiment):
         self.scope.camera.preview()
 
     def run(self, data_group=None):
-        print "Compensation Image currently does nothing"
+        # Read config.
+        image_path = self.config_file["compensation_image_path"]
+        sample_count = self.config_file["compensation_image_count"]
 
-        compensation_image_path = self.config_file["compensation_image_path"]
+        # Make a new data group to store results.
+        if data_group is None:
+            data_group = self.create_data_group("compensation_image_%d")
 
-        print "Compensation image path = '%s'" % (compensation_image_path)
+        # Read the images and store them in the results.
+        result_image = None
+        for _ in range(0, sample_count):
+            image = _capture_image_from_microscope(self.scope)
+            _save_image_to_datagroup(data_group, image, self.scope.stage.position)
+            if result_image is None:
+                result_image = np.array(image, np.int)
+            else:
+                result_image += image
+        result_image /= sample_count
+
+        cv2.imwrite(image_path, result_image, [int(cv2.IMWRITE_PNG_COMPRESSION), 9])
 
 
 class TimelapseTiledImage(TiledImage):
