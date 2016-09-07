@@ -17,6 +17,7 @@ import end_functions as e
 import helpers as h
 import image_proc as proc
 import measurements as mmts
+from wsexperiment import WSExperiment
 
 
 class AutoFocus(Experiment):
@@ -144,17 +145,14 @@ def _calculate_parabola_vertex(x1, y1, x2, y2, x3, y3):
     return vx, vy
 
 
-class TiledImage(Experiment):
+class TiledImage(WSExperiment):
     """Class to conduct experiments where a tiled sequence of images is 
     taken and post-processed.
     Valid kwargs are: step_pair, backlash, focus."""
 
     def __init__(self, microscope, config_file, **kwargs):
-        super(TiledImage, self).__init__()
-        self.config_file = d.make_dict(config_file, **kwargs)
-        self.scope = microscope
+        super(TiledImage, self).__init__(microscope, config_file, **kwargs)
         self.scope.log('INFO: starting tiled image.')
-        self.scope.camera.preview()
 
     def run(self, data_group=None):
         # Get default values.
