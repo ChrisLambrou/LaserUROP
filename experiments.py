@@ -104,7 +104,7 @@ def autofocus(scope, dz, log = False, data_group = None):
     for index, pos in raster_scan(scope.stage, dz=dz):
         image = scope.camera.get_frame(greyscale=False, mode="compressed")
         if data_group is not None:
-            h.save_image_to_datagroup(data_group, image, pos)
+            _save_image_to_datagroup(data_group, image, pos)
 
         sharpness = mmts.sharpness_lap(image)
         sharpnesses.append(sharpness)
@@ -195,7 +195,7 @@ class TiledImage(Experiment):
             # now capture and save the image at the best z-axis position of focus.
             image = self.scope.camera.get_frame(greyscale=False,
                                                 mode="fast_bayer")
-            h.save_image_to_datagroup(data_group, image, self.scope.stage.position)
+            _save_image_to_datagroup(data_group, image, self.scope.stage.position)
 
 class TimelapseTiledImage(TiledImage):
     """Take a TiledImage every n minutes (assumint the TiledImage takes less time)"""
@@ -538,3 +538,11 @@ def _move_capture(exp_obj, iter_dict, image_mode, func_list=None,
             raise ValueError('end_func must be None if save_mode = '
                              '\'save_each\', because the results array is '
                              'empty.')
+
+
+def _save_image_to_datagroup(data_group, image, position):
+    compressed_image = cv2.imencode(".jpg", image)[1]
+    ds = data_group.create_dataset("image_%d",
+                                   data=compressed_image)
+    ds.attrs['position'] = position
+    ds.attrs['compressed_image_format'] = 'JPEG'
