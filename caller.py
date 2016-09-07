@@ -12,6 +12,7 @@ Usage:
     caller.py tiled
     caller.py tiled_image
     caller.py timelapse_tiled_image
+    caller.py compensate
     caller.py gui
     caller.py (-h | --help)
 
@@ -69,5 +70,8 @@ if __name__ == '__main__':
             elif sys_args['align']:
                 align = exp.Align(scope, CONFIG_PATH)
                 align.run(func_list=fun_list)
+            elif sys_args['compensate']:
+                compensate = exp.CompensationImage(scope, CONFIG_PATH)
+                compensate.run()
     finally:
         nplab.close_current_datafile()

@@ -41,9 +41,9 @@ class AutoFocus(Experiment):
             ['backlash', 'mode', 'mmt_range', 'crop_fraction'])
         print mode
         # Set up the data recording.
-        attributes = {'resolution':     self.scope.camera.resolution,
-                      'backlash':       backlash,
-                      'capture_func':   mode}
+        attributes = {'resolution': self.scope.camera.resolution,
+                      'backlash': backlash,
+                      'capture_func': mode}
 
         funcs = [h.bake(proc.crop_array,
                         args=['IMAGE_ARR'],
@@ -96,7 +96,7 @@ class Tiled(Experiment):
         print self.scope.stage.position
 
 
-def autofocus(scope, dz, data_group = None):
+def autofocus(scope, dz, data_group=None):
     """Take pictures at a range of z positions and move to the sharpest."""
     print "Autofocusing"
     sharpnesses = []
@@ -161,11 +161,11 @@ class TiledImage(Experiment):
         n = self.config_file["n"]
         step_increment = self.config_file["steps"]
         fine_af_dz = symmetric_range(
-                self.config_file["autofocus_fine_n"],
-                self.config_file["autofocus_fine_step"])
+            self.config_file["autofocus_fine_n"],
+            self.config_file["autofocus_fine_step"])
         coarse_af_dz = symmetric_range(
-                self.config_file["autofocus_coarse_n"],
-                self.config_file["autofocus_coarse_step"])
+            self.config_file["autofocus_coarse_n"],
+            self.config_file["autofocus_coarse_step"])
 
         # Set up the data recording.
         attributes = {'n': n, 'step_increment': step_increment,
@@ -193,12 +193,26 @@ class TiledImage(Experiment):
 
             _save_image_to_datagroup(data_group, image, self.scope.stage.position)
 
+
+class CompensationImage(Experiment):
+    def __init__(self, microscope, config_file, **kwargs):
+        super(CompensationImage, self).__init__()
+        self.config_file = d.make_dict(config_file, **kwargs)
+        self.scope = microscope
+        self.scope.log('INFO: starting compensation image.')
+        self.scope.camera.preview()
+
+    def run(self, data_group=None):
+        print "Compensation Image currently does nothing"
+
+
 class TimelapseTiledImage(TiledImage):
     """Take a TiledImage every n minutes (assumint the TiledImage takes less time)"""
+
     def run(self):
         interval_minutes = self.config_file["timelapse_interval_minutes"]
         last_image = time.time() - interval_minutes * 60
-        while self.wait_or_stop(max(0.1, interval_minutes*60 - (time.time()-last_image))):
+        while self.wait_or_stop(max(0.1, interval_minutes * 60 - (time.time() - last_image))):
             last_image = time.time()
             print "acquiring another tiled image..."
             TiledImage.run(self)
@@ -206,9 +220,9 @@ class TimelapseTiledImage(TiledImage):
         print "all finished."
 
 
-
 class Align(Experiment):
     """Class to align the spot to position of maximum brightness."""
+
     def __init__(self, microscope, config_file, **kwargs):
         super(Align, self).__init__()
         self.config_file = d.make_dict(config_file, **kwargs)
@@ -344,7 +358,7 @@ def symmetric_range(n, increment):
 
     The distance between each pair of adjacent points is `increment`.
     """
-    return (np.arange(n) - (n-1)/2) * increment
+    return (np.arange(n) - (n - 1) / 2) * increment
 
 
 def raster_scan(stage, dx=[0], dy=[0], dz=[0]):
@@ -358,7 +372,7 @@ def raster_scan(stage, dx=[0], dy=[0], dz=[0]):
             for j, y in enumerate(ys):
                 for i, x in enumerate(xs):
                     stage.move_to_pos([x, y, z])
-                    yield np.array([i, j , k]), np.array([x, y, z])
+                    yield np.array([i, j, k]), np.array([x, y, z])
     except KeyboardInterrupt:
         print "Keyboard Interrupt: aborting scan."
         raise KeyboardInterrupt
