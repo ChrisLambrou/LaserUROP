@@ -97,54 +97,6 @@ class Tiled(Experiment):
         print self.scope.stage.position
 
 
-def autofocus(scope, dz, data_group=None):
-    """Take pictures at a range of z positions and move to the sharpest."""
-    print "Autofocusing"
-    sharpnesses = []
-    positions = []
-
-    for index, pos in raster_scan(scope.stage, dz=dz):
-        image = _capture_image_from_microscope(scope)
-        if data_group is not None:
-            _save_image_to_datagroup(data_group, image, pos)
-        sharpness = mmts.sharpness_clippedlog(image)
-        sharpnesses.append(sharpness)
-        positions.append(pos)
-
-    best_index = np.argmax(sharpnesses)
-    best_position = positions[best_index]
-
-    # Use quadratic curve fitting to determine the best z-value, based on the best sample
-    # and its two adjacent neighbours.
-    if 0 < best_index < len(sharpnesses) - 1:
-        best_position = _quadratic_curve_fit_on_z_values(positions, sharpnesses, best_index)
-
-    # And finally move the stage to the best focus position.
-    scope.stage.move_to_pos(best_position)
-
-
-def _quadratic_curve_fit_on_z_values(positions, sharpnesses, best_index):
-    best_position = positions[best_index]
-    z1 = positions[best_index - 1][2]
-    z2 = positions[best_index][2]
-    z3 = positions[best_index + 1][2]
-    s1 = sharpnesses[best_index - 1]
-    s2 = sharpnesses[best_index]
-    s3 = sharpnesses[best_index + 1]
-    zbest, sbest = _calculate_parabola_vertex(z1, s1, z2, s2, z3, s3)
-    return [best_position[0], best_position[1], int(round(zbest))]
-
-
-def _calculate_parabola_vertex(x1, y1, x2, y2, x3, y3):
-    denom = (x1 - x2) * (x1 - x3) * (x2 - x3)
-    A = (x3 * (y2 - y1) + x2 * (y1 - y3) + x1 * (y3 - y2)) / denom
-    B = (x3 * x3 * (y1 - y2) + x2 * x2 * (y3 - y1) + x1 * x1 * (y2 - y3)) / denom
-    C = (x2 * x3 * (x2 - x3) * y1 + x3 * x1 * (x3 - x1) * y2 + x1 * x2 * (x1 - x2) * y3) / denom
-    vx = -B / (2 * A)
-    vy = C - B * B / (4 * A)
-    return vx, vy
-
-
 class TiledImage(WSExperiment):
     """Class to conduct experiments where a tiled sequence of images is 
     taken and post-processed.
@@ -177,28 +129,23 @@ class TiledImage(WSExperiment):
         # Now move over the grid of positions and save images.
         displacements = symmetric_range(n, step_increment)
         z_shift = 0
-        for index, pos in raster_scan(self.scope.stage,
-                                      dx=displacements,
-                                      dy=displacements):
+        for index, pos in self.raster_scan(dx=displacements, dy=displacements):
             # We autofocus, remembering the previous z position
             self.scope.stage.focus_rel(z_shift)
             if index[0] == 0:
-                autofocus(self.scope, coarse_af_dz)
-            autofocus(self.scope, fine_af_dz, data_group=data_group)
+                self.autofocus(coarse_af_dz)
+            self.autofocus(fine_af_dz)
             z_shift = self.scope.stage.position[2]
             # now capture and save the image at the best z-axis position of focus.
-            image = _capture_image_from_microscope(self.scope)
+            image = self.capture_image()
+            self.save_image_to_datagroup(image, data_group)
 
-            _save_image_to_datagroup(data_group, image, self.scope.stage.position)
 
+class CompensationImage(WSExperiment):
 
-class CompensationImage(Experiment):
     def __init__(self, microscope, config_file, **kwargs):
-        super(CompensationImage, self).__init__()
-        self.config_file = d.make_dict(config_file, **kwargs)
-        self.scope = microscope
+        super(CompensationImage, self).__init__(microscope, config_file, **kwargs)
         self.scope.log('INFO: starting compensation image.')
-        self.scope.camera.preview()
 
     def run(self, data_group=None):
         # Read config.
@@ -209,17 +156,20 @@ class CompensationImage(Experiment):
         if data_group is None:
             data_group = self.create_data_group("compensation_image_%d")
 
-        # Read the images and store them in the results.
+        # Read the images, store them in the results, and accumulate them.
         result_image = None
         for _ in range(0, sample_count):
-            image = _capture_image_from_microscope(self.scope)
-            _save_image_to_datagroup(data_group, image, self.scope.stage.position)
+            image = self.capture_image(compensate=False)
+            self.save_image_to_datagroup(image, data_group)
             if result_image is None:
                 result_image = np.array(image, np.int)
             else:
                 result_image += image
+
+        # Divide by the number of accumulated images to produce an average image.
         result_image /= sample_count
 
+        # Export the averaged compensation image.
         cv2.imwrite(image_path, result_image, [int(cv2.IMWRITE_PNG_COMPRESSION), 9])
 
 
@@ -377,27 +327,6 @@ def symmetric_range(n, increment):
     """
     return (np.arange(n) - (n - 1) / 2) * increment
 
-
-def raster_scan(stage, dx=[0], dy=[0], dz=[0]):
-    """Iterate over positions - returns a tuple of (index, pos) each time"""
-    initial_pos = stage.position
-    xs = np.array(dx) + initial_pos[0]
-    ys = np.array(dy) + initial_pos[1]
-    zs = np.array(dz) + initial_pos[2]
-    try:
-        for k, z in enumerate(zs):
-            for j, y in enumerate(ys):
-                for i, x in enumerate(xs):
-                    stage.move_to_pos([x, y, z])
-                    yield np.array([i, j, k]), np.array([x, y, z])
-    except KeyboardInterrupt:
-        print "Keyboard Interrupt: aborting scan."
-        raise KeyboardInterrupt
-    except Exception as e:
-        print "An error occurred.  Moving back to initial position."
-        raise e
-    finally:
-        stage.move_to_pos(initial_pos)
 
 
 def _move_capture(exp_obj, iter_dict, image_mode, func_list=None,
@@ -567,13 +496,3 @@ def _move_capture(exp_obj, iter_dict, image_mode, func_list=None,
                              'empty.')
 
 
-def _save_image_to_datagroup(data_group, image, position):
-    compressed_image = cv2.imencode(".jpg", image)[1]
-    ds = data_group.create_dataset("image_%d",
-                                   data=compressed_image)
-    ds.attrs['position'] = position
-    ds.attrs['compressed_image_format'] = 'JPEG'
-
-
-def _capture_image_from_microscope(scope, greyscale=False, mode="compressed"):
-    return scope.camera.get_frame(greyscale, mode)
