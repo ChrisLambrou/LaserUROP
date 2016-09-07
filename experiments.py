@@ -104,7 +104,33 @@ def autofocus(scope, dz):
         image = scope.camera.get_frame(greyscale=False, mode="compressed")
         sharpnesses.append(mmts.sharpness_lap(image))
         positions.append(pos)
-    scope.stage.move_to_pos(positions[np.argmax(sharpnesses)])
+    best_index = np.argmax(sharpnesses)
+
+    best_position = positions[best_index]
+
+    # Use quadratic curve fitting to determine the best z-value, based on the best sample
+    # and its two adjacent neighbours.
+    if 0 < best_index < len(sharpnesses) - 1:
+        z1 = positions[best_index - 1][2]
+        z2 = positions[best_index][2]
+        z3 = positions[best_index + 1][2]
+        s1 = sharpnesses[best_index - 1]
+        s2 = sharpnesses[best_index]
+        s3 = sharpnesses[best_index + 1]
+        zbest, sbest = calculate_parabola_vertex(z1, s1, z2, s2, z3, s3)
+        best_position = [best_position[0], best_position[1], int(round(zbest))]
+
+    scope.stage.move_to_pos(best_position)
+
+
+def calculate_parabola_vertex(x1, y1, x2, y2, x3, y3):
+    denom = (x1 - x2) * (x1 - x3) * (x2 - x3)
+    A = (x3 * (y2 - y1) + x2 * (y1 - y3) + x1 * (y3 - y2)) / denom
+    B = (x3 * x3 * (y1 - y2) + x2 * x2 * (y3 - y1) + x1 * x1 * (y2 - y3)) / denom
+    C = (x2 * x3 * (x2 - x3) * y1 + x3 * x1 * (x3 - x1) * y2 + x1 * x2 * (x1 - x2) * y3) / denom
+    vx = -B / (2 * A)
+    vy = C - B * B / (4 * A)
+    return vx, vy
 
 
 class TiledImage(Experiment):
@@ -151,7 +177,7 @@ class TiledImage(Experiment):
                 autofocus(self.scope, coarse_af_dz)
             autofocus(self.scope, fine_af_dz)
             z_shift = self.scope.stage.position[2]
-            # now save the image
+            # now capture and save the image at the best z-axis position of focus.
             image = self.scope.camera.get_frame(greyscale=False,
                                                 mode="fast_bayer")
             compressed_image = cv2.imencode(".jpg", image)[1]
