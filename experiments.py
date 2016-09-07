@@ -96,15 +96,25 @@ class Tiled(Experiment):
         print self.scope.stage.position
 
 
-def autofocus(scope, dz):
+def autofocus(scope, dz, log = False, data_group = None):
     """Take pictures at a range of z positions and move to the sharpest."""
+    print "Autofocusing"
     sharpnesses = []
     positions = []
     for index, pos in raster_scan(scope.stage, dz=dz):
         image = scope.camera.get_frame(greyscale=False, mode="compressed")
-        sharpnesses.append(mmts.sharpness_lap(image))
+        if data_group is not None:
+            h.save_image_to_datagroup(data_group, image, pos)
+
+        sharpness = mmts.sharpness_lap(image)
+        sharpnesses.append(sharpness)
+        if log:
+            print "    %d, %f" % (pos[2], sharpness)
         positions.append(pos)
+
     best_index = np.argmax(sharpnesses)
+    if log:
+        print "    Best index: %d" % (best_index)
 
     best_position = positions[best_index]
 
@@ -119,7 +129,12 @@ def autofocus(scope, dz):
         s3 = sharpnesses[best_index + 1]
         zbest, sbest = calculate_parabola_vertex(z1, s1, z2, s2, z3, s3)
         best_position = [best_position[0], best_position[1], int(round(zbest))]
+    else:
+        if log:
+            print "    Parabolic interpolation not used"
 
+    if log:
+        print "    Best position: %d" % (best_position[2])
     scope.stage.move_to_pos(best_position)
 
 
@@ -174,17 +189,13 @@ class TiledImage(Experiment):
             # We autofocus, remembering the previous z position
             self.scope.stage.focus_rel(z_shift)
             if index[0] == 0:
-                autofocus(self.scope, coarse_af_dz)
-            autofocus(self.scope, fine_af_dz)
+                autofocus(self.scope, coarse_af_dz, log=True)
+            autofocus(self.scope, fine_af_dz, log=True, data_group=data_group)
             z_shift = self.scope.stage.position[2]
             # now capture and save the image at the best z-axis position of focus.
             image = self.scope.camera.get_frame(greyscale=False,
                                                 mode="fast_bayer")
-            compressed_image = cv2.imencode(".jpg", image)[1]
-            ds = data_group.create_dataset("image_%d", 
-                                           data=compressed_image)
-            ds.attrs['position'] = self.scope.stage.position
-            ds.attrs['compressed_image_format'] = 'JPEG'
+            h.save_image_to_datagroup(data_group, image, self.scope.stage.position)
 
 class TimelapseTiledImage(TiledImage):
     """Take a TiledImage every n minutes (assumint the TiledImage takes less time)"""

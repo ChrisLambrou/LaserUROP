@@ -2,6 +2,7 @@
 
 """Contains base-level functions that are required for the others to run."""
 
+import cv2
 import numpy as np
 
 
@@ -164,3 +165,12 @@ def _factors(num):
         1, int(num ** 0.5) + 1) if num % j == 0)))
     factor_list.sort()
     return factor_list
+
+
+def save_image_to_datagroup(data_group, image, position):
+    compressed_image = cv2.imencode(".jpg", image)[1]
+    ds = data_group.create_dataset("image_%d",
+                                   data=compressed_image)
+    ds.attrs['position'] = position
+    ds.attrs['compressed_image_format'] = 'JPEG'
+
