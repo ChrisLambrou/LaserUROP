@@ -165,13 +165,12 @@ pixel_block:       4
 
 # ----------------------------------------------------- CompensationImage -----------------------------------------------------
 
-# The path of the compensation image. This is relative to the current working folder, not _this_ config file.
-# This file will be overwritten by the CompensationImage experiment, and used by other experiments if/when they
+# The path of the folder that stores the compensation images. This is relative to the current working folder, not _this_ config file.
+# Compensation images will be overwritten by the CompensationImage experiment, and used by other experiments if/when they
 # become aware of this capability.
-compensation_image_path:  CompensationImage.png
+compensation_images_path:  compensation_images
 
 # The number of individual compensation images that are captured and combined in order to reduce noise in the final
 # compensation image.
-compensation_image_count:  10
-
+compensation_image_count:  100
 ...

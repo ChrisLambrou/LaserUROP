@@ -13,12 +13,12 @@ class WSExperiment(Experiment):
         self.config_file = d.make_dict(config_file, **kwargs)
         self.scope = microscope
         self.scope.camera.preview()
-        self._compensation_factor = None
+        self._compensation_factors = {}
 
-    def capture_image(self, greyscale=False, mode="compressed", compensate=True):
-        image = self.scope.camera.get_frame(greyscale, mode)
+    def capture_image(self, mode="compressed", compensate=True):
+        image = self.scope.camera.get_frame(greyscale=False, mode=mode)
         if compensate:
-            return self._compensate_image(image)
+            return self._compensate_image(image, mode)
         else:
             return image
 
@@ -74,15 +74,18 @@ class WSExperiment(Experiment):
         finally:
             stage.move_to_pos(initial_pos)
 
-    def _compensate_image(self, image):
+    def _compensate_image(self, image, mode):
         # Lazy-load the compensation factor image.
-        if self._compensation_factor is None:
-            image_path = self.config_file["compensation_image_path"]
+        compensation_factor = self._compensation_factors.get(mode)
+        if compensation_factor is None:
+            images_dir = self.config_file["compensation_images_path"]
+            image_path = "%s/CompensationImage_%s.png" % (images_dir, mode)
             compensation_image = cv2.imread(image_path)
-            self._compensation_factor = 224.0 / (compensation_image + 1)  # Avoid divide by zero issues.
+            compensation_factor = 224.0 / (compensation_image + 1)  # Avoid divide by zero issues.
+            self._compensation_factors[mode] = compensation_factor
 
         # Compensate the image.
-        scaled_image = image * self._compensation_factor
+        scaled_image = image * compensation_factor
         return scaled_image.astype(np.int).clip(0, 255)
 
 

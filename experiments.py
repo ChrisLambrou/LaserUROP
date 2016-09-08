@@ -8,7 +8,9 @@ microscope.py, image_proc.py and data_io.py."""
 import time as t
 import time
 import cv2
+import gc
 import numpy as np
+import os
 from nplab.experiment.experiment import Experiment
 from scipy import ndimage as sn
 
@@ -137,7 +139,7 @@ class TiledImage(WSExperiment):
             self.autofocus(fine_af_dz)
             z_shift = self.scope.stage.position[2]
             # now capture and save the image at the best z-axis position of focus.
-            image = self.capture_image()
+            image = self.capture_image(mode="fast_bayer")
             self.save_image_to_datagroup(image, data_group)
 
 
@@ -149,28 +151,35 @@ class CompensationImage(WSExperiment):
 
     def run(self, data_group=None):
         # Read config.
-        image_path = self.config_file["compensation_image_path"]
+        images_dir = self.config_file["compensation_images_path"]
         sample_count = self.config_file["compensation_image_count"]
 
         # Make a new data group to store results.
         if data_group is None:
             data_group = self.create_data_group("compensation_image_%d")
 
-        # Read the images, store them in the results, and accumulate them.
-        result_image = None
-        for _ in range(0, sample_count):
-            image = self.capture_image(compensate=False)
-            self.save_image_to_datagroup(image, data_group)
-            if result_image is None:
-                result_image = np.array(image, np.int)
-            else:
-                result_image += image
+        for mode in ('compressed', 'fast_bayer'):
+            # Read the images, store them in the results, and accumulate them.
+            print "Acquiring compensation images for mode %s" % mode
+            result_image = None
+            for i in range(0, sample_count):
+                print "  Image %d of %d" % (i + 1, sample_count)
+                image = self.capture_image(mode=mode, compensate=False)
+                self.save_image_to_datagroup(image, data_group)
+                if result_image is None:
+                    result_image = np.array(image, np.int)
+                else:
+                    result_image += image
+                gc.collect()
 
-        # Divide by the number of accumulated images to produce an average image.
-        result_image /= sample_count
+            # Divide by the number of accumulated images to produce an average image.
+            result_image /= sample_count
 
-        # Export the averaged compensation image.
-        cv2.imwrite(image_path, result_image, [int(cv2.IMWRITE_PNG_COMPRESSION), 9])
+            # Export the averaged compensation image.
+            if not os.path.exists(images_dir):
+                os.makedirs(images_dir)
+            image_path = "%s/CompensationImage_%s.png" % (images_dir, mode)
+            cv2.imwrite(image_path, result_image, [int(cv2.IMWRITE_PNG_COMPRESSION), 9])
 
 
 class TimelapseTiledImage(TiledImage):
