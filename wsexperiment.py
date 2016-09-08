@@ -52,19 +52,21 @@ class WSExperiment(Experiment):
         # And finally move the stage to the best focus position.
         self.scope.stage.move_to_pos(best_position)
 
-    def raster_scan(self, dx=[0], dy=[0], dz=[0]):
+    def raster_scan(self, dx=[None], dy=[None], dz=[None]):
         """Iterate over positions - returns a tuple of (index, pos) each time"""
         stage = self.scope.stage
-        initial_pos = stage.position
-        xs = np.array(dx) + initial_pos[0]
-        ys = np.array(dy) + initial_pos[1]
-        zs = np.array(dz) + initial_pos[2]
+        origin = stage.position
+
         try:
-            for k, z in enumerate(zs):
-                for j, y in enumerate(ys):
-                    for i, x in enumerate(xs):
-                        stage.move_to_pos([x, y, z])
-                        yield np.array([i, j, k]), np.array([x, y, z])
+            for k, z in enumerate(dz):
+                for j, y in enumerate(dy):
+                    for i, x in enumerate(dx):
+                        new_x = stage.position[0] if x is None else (origin[0] + x)
+                        new_y = stage.position[1] if y is None else (origin[1] + y)
+                        new_z = stage.position[2] if z is None else (origin[2] + z)
+                        new_pos = [new_x, new_y, new_z]
+                        stage.move_to_pos(new_pos)
+                        yield np.array([i, j, k]), np.array(new_pos)
         except KeyboardInterrupt:
             print "Keyboard Interrupt: aborting scan."
             raise KeyboardInterrupt
@@ -72,7 +74,7 @@ class WSExperiment(Experiment):
             print "An error occurred.  Moving back to initial position."
             raise e
         finally:
-            stage.move_to_pos(initial_pos)
+            stage.move_to_pos(origin)
 
     def _compensate_image(self, image, mode):
         # Lazy-load the compensation factor image.
