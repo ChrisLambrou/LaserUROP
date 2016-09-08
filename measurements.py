@@ -16,8 +16,23 @@ def sharpness_lap(bgr_array):
     :return: The mean Laplacian.
     """
     image_bw = np.mean(bgr_array, 2)
-    image_lap = sn.filters.laplace(image_bw)
-    return np.mean(np.abs(image_lap))
+    image_laplace = sn.filters.laplace(image_bw)
+    return np.mean(np.abs(image_laplace))
+
+
+def sharpness_clippedlog(bgr_array):
+    """Calculate sharpness as the clipped LoG of the BGR image array.
+    :param bgr_array: The 3-channel image to calculate sharpness for.
+    :return: The mean clipped LoG value across all pixels in the image.
+    """
+    image_bw = np.mean(bgr_array, 2)
+    image_filtered = sn.filters.gaussian_laplace(image_bw, 1)
+
+    # We use the -ve values and invert the result, because we
+    # care about pixels where the intensity value is lower than their
+    # surroundings, dark bacteria with a lighter halo, and want to exclude
+    # lighter bacteria with a darker halo.
+    return -np.mean(np.clip(image_filtered, -10000000, 0))
 
 
 def brightness(arr):

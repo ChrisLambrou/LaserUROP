@@ -2,6 +2,7 @@
 
 """Contains base-level functions that are required for the others to run."""
 
+import cv2
 import numpy as np
 
 
