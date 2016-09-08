@@ -129,22 +129,38 @@ class TiledImage(WSExperiment):
             data_group = self.create_data_group("tiled_image_%d")
 
         # Now move over the grid of positions and save images.
+        first_column_z = 0
         displacements = symmetric_range(n, step_increment)
-        z_shift = 0
         for index, pos in self.raster_scan(dx=displacements, dy=displacements):
-            # We autofocus, remembering the previous z position
-            self.scope.stage.focus_rel(z_shift)
+
+            # If we're in the first column, perform a coarse auto-focus.
             if index[0] == 0:
+                # If we know the focus position from an earlier row, restore it now.
+                if index[1] > 0:
+                    self._move_to_z(first_column_z)
                 self.autofocus(coarse_af_dz)
+
+            # Always perform a fine auto-focus for every tile position.
             self.autofocus(fine_af_dz)
-            z_shift = self.scope.stage.position[2]
-            # now capture and save the image at the best z-axis position of focus.
+
+            # Remember the focus position of the first column, for when we start the next row.
+            if index[0] == 0:
+                first_column_z = self.scope.stage.position[2]
+
+            # Now capture and save the image.
             image = self.capture_image(mode="fast_bayer")
             self.save_image_to_datagroup(image, data_group)
 
+    def _move_to_z(self, new_z):
+        stage = self.scope.stage
+        current = stage.position
+        new_x = current[0]
+        new_y = current[1]
+        new_pos = [new_x, new_y, new_z]
+        stage.move_to_pos(new_pos)
+
 
 class CompensationImage(WSExperiment):
-
     def __init__(self, microscope, config_file, **kwargs):
         super(CompensationImage, self).__init__(microscope, config_file, **kwargs)
         self.scope.log('INFO: starting compensation image.')
@@ -337,7 +353,6 @@ def symmetric_range(n, increment):
     return (np.arange(n) - (n - 1) / 2) * increment
 
 
-
 def _move_capture(exp_obj, iter_dict, image_mode, func_list=None,
                   save_mode='save_subset', end_func=None):
     """Function to carry out a sequence of measurements as per iter_list,
@@ -503,5 +518,3 @@ def _move_capture(exp_obj, iter_dict, image_mode, func_list=None,
             raise ValueError('end_func must be None if save_mode = '
                              '\'save_each\', because the results array is '
                              'empty.')
-
-
