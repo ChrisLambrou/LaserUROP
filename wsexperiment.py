@@ -1,4 +1,3 @@
-
 import cv2
 import data_io as d
 import measurements as mmts
@@ -7,7 +6,6 @@ from nplab.experiment.experiment import Experiment
 
 
 class WSExperiment(Experiment):
-
     def __init__(self, microscope, config_file, **kwargs):
         super(WSExperiment, self).__init__()
         self.config_file = d.make_dict(config_file, **kwargs)
@@ -15,12 +13,37 @@ class WSExperiment(Experiment):
         self.scope.camera.preview()
         self._compensation_factors = {}
 
-    def capture_image(self, mode="compressed", compensate=True):
+    def capture_image(self, mode="compressed", compensate=True, crop=False):
         image = self.scope.camera.get_frame(greyscale=False, mode=mode)
+        if crop:
+            image = self._crop_image(image)
         if compensate:
-            return self._compensate_image(image, mode)
-        else:
-            return image
+            compensation_factor = self._get_compensation_factor(mode)
+            if crop:
+                compensation_factor = self._crop_image(compensation_factor)
+            image = (image * compensation_factor).astype(np.int).clip(0, 255)
+        return image
+
+    def _crop_image(self, image):
+        shape = image.shape
+        width = shape[0]
+        height = shape[1]
+        x1 = width / 3
+        x2 = 2 * width / 3
+        y1 = height / 3
+        y2 = 2 * height / 3
+        return image[x1:x2,y1:y2,:]
+
+    def _get_compensation_factor(self, mode):
+        # Lazy-load the compensation factor image.
+        compensation_factor = self._compensation_factors.get(mode)
+        if compensation_factor is None:
+            images_dir = self.config_file["compensation_images_path"]
+            image_path = "%s/CompensationImage_%s.png" % (images_dir, mode)
+            compensation_image = cv2.imread(image_path)
+            compensation_factor = 224.0 / (compensation_image + 1)  # Avoid divide by zero issues.
+            self._compensation_factors[mode] = compensation_factor
+        return compensation_factor
 
     def save_image_to_datagroup(self, image, data_group, position=None):
         compressed_image = cv2.imencode(".jpg", image)[1]
@@ -34,7 +57,7 @@ class WSExperiment(Experiment):
         positions = []
 
         for index, pos in self.raster_scan(dz=dz):
-            image = self.capture_image()
+            image = self.capture_image(crop=True)
             if data_group is not None:
                 self.save_image_to_datagroup(image, data_group)
             sharpness = mmts.sharpness_clippedlog(image)
@@ -75,20 +98,6 @@ class WSExperiment(Experiment):
             raise e
         finally:
             stage.move_to_pos(origin)
-
-    def _compensate_image(self, image, mode):
-        # Lazy-load the compensation factor image.
-        compensation_factor = self._compensation_factors.get(mode)
-        if compensation_factor is None:
-            images_dir = self.config_file["compensation_images_path"]
-            image_path = "%s/CompensationImage_%s.png" % (images_dir, mode)
-            compensation_image = cv2.imread(image_path)
-            compensation_factor = 224.0 / (compensation_image + 1)  # Avoid divide by zero issues.
-            self._compensation_factors[mode] = compensation_factor
-
-        # Compensate the image.
-        scaled_image = image * compensation_factor
-        return scaled_image.astype(np.int).clip(0, 255)
 
 
 def _quadratic_curve_fit_on_z_values(positions, sharpnesses, best_index):
